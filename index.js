@@ -22,6 +22,15 @@ const STAGE = {
 const CREDITS_PER_REFERRAL = 3;
 const CREDITS_FOR_FREE_ORDER = 6;
 
+const crown  = `<tg-emoji emoji-id="5368324170671202286">👑</tg-emoji>`;
+const fire   = `<tg-emoji emoji-id="5370870672667374515">🔥</tg-emoji>`;
+const money  = `<tg-emoji emoji-id="5373141891321699086">💵</tg-emoji>`;
+const check  = `<tg-emoji emoji-id="5368324170671202286">✅</tg-emoji>`;
+const star   = `<tg-emoji emoji-id="5370399154727416166">⭐</tg-emoji>`;
+const bolt   = `<tg-emoji emoji-id="5371168276122820957">⚡</tg-emoji>`;
+const lock   = `<tg-emoji emoji-id="5364240322202782916">🔒</tg-emoji>`;
+const gift   = `<tg-emoji emoji-id="5372981976804366741">🎁</tg-emoji>`;
+
 function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
@@ -83,10 +92,10 @@ async function sendTyping(chatId) {
   }).catch(() => {});
 }
 
-async function send(chatId, text, pauseBefore = 1000) {
+async function send(chatId, text, pauseBefore = 800) {
   await delay(pauseBefore);
   await sendTyping(chatId);
-  await delay(1200);
+  await delay(1000);
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
     text,
@@ -97,16 +106,16 @@ async function send(chatId, text, pauseBefore = 1000) {
 
 async function forwardToOwner(session, chatId, user) {
   const freeNote = user.credits >= CREDITS_FOR_FREE_ORDER
-    ? "\nFREE ORDER - customer has enough credits\n" : "";
+    ? "\nFREE ORDER — credits applied\n" : "";
 
   const caption =
-    `NEW ORDER - @BiteNowBot\n\n` +
+    `NEW ORDER — @BiteNowBot\n\n` +
     `Customer: ${session.username || chatId}\n` +
     `Address: ${session.fullAddress}\n` +
     `Phone: ${session.phone}\n` +
     `Email: ${session.email}\n` +
     `Credits: ${user.credits}${freeNote}\n\n` +
-    `They are saving 65% off\n\n` +
+    `Saving 65%\n\n` +
     `Reply: t.me/${session.username?.replace("@", "") || chatId}`;
 
   if (session.cartFileId) {
@@ -126,14 +135,38 @@ async function forwardToOwner(session, chatId, user) {
 }
 
 const FAQ = [
-  { keys: ["how", "work", "works"], reply: "simple. you send your cart screenshot, we place the order, you pay 65% less. that is it." },
-  { keys: ["save", "65", "percent"], reply: "we got the plug. do not worry about how, just know it works every time." },
-  { keys: ["pay", "payment", "cost", "price"], reply: "you pay after we confirm your order. we accept CashApp, Apple Pay, Zelle, or crypto." },
-  { keys: ["restaurant", "restaurants", "where", "place"], reply: "we do Dominos, Papa Johns, Subway, Churchs Chicken, Five Guys, Jersey Mikes, Panda Express, Auntie Annes, Insomnia Cookies, Panera, Applebees, Olive Garden, Jack in the Box, CAVA and more." },
-  { keys: ["long", "fast", "time", "quick"], reply: "once you submit your order we move fast. Munchy gets on it immediately." },
-  { keys: ["real", "legit", "scam", "trust", "safe"], reply: "100% legit. Munchy been doing this. your order gets placed and you save real money every time." },
-  { keys: ["refer", "referral", "invite", "link", "credits", "credit"], reply: "type /referral to get your personal invite link. you get 3 credits every time someone orders using your link. 6 credits = free order." },
-  { keys: ["hi", "hey", "hello", "sup", "yo", "hii", "heyy"], reply: "yooo welcome. send your cart screenshot to get started." },
+  {
+    keys: ["how", "work", "works"],
+    reply: `${bolt} Simple. You send your cart, we place the order. You pay 65% less. Every time.`,
+  },
+  {
+    keys: ["save", "65", "percent", "discount"],
+    reply: `${lock} We have access you don't. Don't worry about how — just know it works.`,
+  },
+  {
+    keys: ["pay", "payment", "cost", "price"],
+    reply: `${money} You pay after your order is confirmed. We accept CashApp, Apple Pay, Zelle, and crypto.`,
+  },
+  {
+    keys: ["restaurant", "restaurants", "where", "place", "which"],
+    reply: `${fire} We cover Dominos, Papa Johns, Subway, Churchs Chicken, Five Guys, Jersey Mikes, Panda Express, Auntie Annes, Insomnia Cookies, Panera, Applebees, Olive Garden, Jack in the Box, CAVA and more.`,
+  },
+  {
+    keys: ["long", "fast", "time", "quick", "wait"],
+    reply: `${bolt} Once your order is in, we move immediately. No delays on our end.`,
+  },
+  {
+    keys: ["real", "legit", "scam", "trust", "safe", "fake"],
+    reply: `${check} BiteNow is the real deal. Every order gets placed. Every customer saves. We don't play games.`,
+  },
+  {
+    keys: ["refer", "referral", "invite", "link", "credits", "credit", "free"],
+    reply: `${gift} Type /referral to get your personal invite link.\n\nEvery person you bring in who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.`,
+  },
+  {
+    keys: ["hi", "hey", "hello", "sup", "yo", "hii", "heyy", "helo"],
+    reply: `${crown} Welcome to BiteNow. Send your cart screenshot and we'll handle the rest.`,
+  },
 ];
 
 function getScriptedReply(text) {
@@ -141,7 +174,7 @@ function getScriptedReply(text) {
   for (const faq of FAQ) {
     if (faq.keys.some((k) => lower.includes(k))) return faq.reply;
   }
-  return "send your cart screenshot and we will get you that 65% off.";
+  return `${bolt} Send your cart screenshot and we'll get you 65% off.`;
 }
 
 app.post("/webhook", async (req, res) => {
@@ -161,7 +194,6 @@ app.post("/webhook", async (req, res) => {
     : msg.from?.first_name || String(chatId);
 
   try {
-    // /start
     if (text.startsWith("/start")) {
       const parts = text.split(" ");
       const refCode = parts[1] || null;
@@ -174,95 +206,90 @@ app.post("/webhook", async (req, res) => {
       resetSession(session);
       session.stage = STAGE.WAITING_CART;
 
-      await send(chatId, "yooo welcome to 65% OFF EATS", 300);
-      await send(chatId, "we place your order and you save 65% off", 0);
-      await send(chatId, "send your cart screenshot to get started", 0);
+      await send(chatId, `${crown} Welcome to BiteNow.`, 300);
+      await send(chatId, `${fire} We place your food order and you pay 65% less. Every single time.`, 0);
+      await send(chatId, `${bolt} Send your cart screenshot to get started.`, 0);
       return;
     }
 
-    // /referral, /refer, /getlink
-    if (text === "/referral" || text === "/refer" || text === "/getlink") {
+    if (["/referral", "/refer", "/getlink"].includes(text)) {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
-      await send(chatId,
-        `your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\nshare this with friends. when they place an order you get 3 credits.\n\nyour credits: ${user.credits}\ncredits needed for a free order: ${needed}`,
+      await send(
+        chatId,
+        `${gift} Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n${star} Every person you invite who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.\n\nYour credits: ${user.credits}\nCredits until free order: ${needed}`,
         300
       );
       return;
     }
 
-    // /credits
     if (text === "/credits") {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       if (user.credits >= CREDITS_FOR_FREE_ORDER) {
-        await send(chatId, `you have ${user.credits} credits. you have a FREE ORDER ready. place your order and Munchy will apply it.`, 300);
+        await send(chatId, `${gift} You have ${user.credits} credits — your next order is free. Place your order and it will be applied automatically.`, 300);
       } else {
-        await send(chatId, `you have ${user.credits} credits. you need ${needed} more for a free order.\n\nget your referral link: /referral`, 300);
+        await send(chatId, `${star} You have ${user.credits} credits. You need ${needed} more for a free order.\n\nGet your referral link: /referral`, 300);
       }
       return;
     }
 
-    // Cart photo
     if (photo && session.stage === STAGE.WAITING_CART) {
       session.cartFileId = photo[photo.length - 1].file_id;
       session.stage = STAGE.WAITING_ADDRESS;
       session.addressStep = "street";
-      await send(chatId, "got your cart", 300);
-      await send(chatId, "Street Address:", 0);
+      await send(chatId, `${check} Cart received. Let's get your details.`, 300);
+      await send(chatId, `Street Address:`, 0);
       return;
     }
 
-    // Address flow
     if (session.stage === STAGE.WAITING_ADDRESS && text) {
       if (session.addressStep === "street") {
         session.address = text;
         session.addressStep = "apt";
-        await send(chatId, "Apt or Unit number (type N/A if none):", 300);
+        await send(chatId, `Apt or Unit number (type — to skip):`, 300);
         return;
       }
       if (session.addressStep === "apt") {
-        session.addressLine2 = text;
+        const skip = ["-", "--", "none", "skip", "na", "n/a", "no", ""];
+        session.addressLine2 = skip.includes(text.toLowerCase()) ? null : text;
         session.addressStep = "city";
-        await send(chatId, "City:", 300);
+        await send(chatId, `City:`, 300);
         return;
       }
       if (session.addressStep === "city") {
         session.city = text;
         session.addressStep = "state";
-        await send(chatId, "State:", 300);
+        await send(chatId, `State:`, 300);
         return;
       }
       if (session.addressStep === "state") {
         session.state = text;
         session.addressStep = "zip";
-        await send(chatId, "ZIP Code:", 300);
+        await send(chatId, `ZIP Code:`, 300);
         return;
       }
       if (session.addressStep === "zip") {
         if (!/^\d{5}$/.test(text)) {
-          await send(chatId, "enter a valid 5-digit ZIP code:", 300);
+          await send(chatId, `Please enter a valid 5-digit ZIP code:`, 300);
           return;
         }
         session.zip = text;
-        const apt = session.addressLine2 && session.addressLine2.toUpperCase() !== "N/A"
-          ? `, ${session.addressLine2}` : "";
+        const apt = session.addressLine2 ? `, ${session.addressLine2}` : "";
         session.fullAddress = `${session.address}${apt}, ${session.city}, ${session.state} ${session.zip}`;
         session.stage = STAGE.WAITING_PHONE;
-        await send(chatId, "got it", 300);
-        await send(chatId, "Phone Number:", 0);
+        await send(chatId, `${check} Got it.`, 300);
+        await send(chatId, `Phone Number:`, 0);
         return;
       }
     }
 
-    // Phone
     if (session.stage === STAGE.WAITING_PHONE && text) {
       session.phone = text;
       session.stage = STAGE.WAITING_EMAIL;
-      await send(chatId, "got it", 300);
-      await send(chatId, "Email Address:", 0);
+      await send(chatId, `${check} Got it.`, 300);
+      await send(chatId, `Email Address:`, 0);
       return;
     }
 
-    // Email - complete order
     if (session.stage === STAGE.WAITING_EMAIL && text) {
       session.email = text;
       session.stage = STAGE.DONE;
@@ -273,11 +300,12 @@ app.post("/webhook", async (req, res) => {
         const referrer = getUser(user.referredBy);
         referrer.credits += CREDITS_PER_REFERRAL;
         const refNeeded = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
-        await send(user.referredBy,
-          `someone just ordered using your referral link\n\nyou earned 3 credits. your total: ${referrer.credits} credits\n\n${
+        await send(
+          user.referredBy,
+          `${star} Someone you referred just placed their first order.\n\n${gift} You earned 3 credits. Total: ${referrer.credits} credits.\n\n${
             referrer.credits >= CREDITS_FOR_FREE_ORDER
-              ? "you now have a FREE ORDER ready. place your next order to use it."
-              : `${refNeeded} more credits until your free order`
+              ? `${crown} You now have a free order ready. Use it on your next order.`
+              : `${bolt} ${refNeeded} more credits and your next order is free.`
           }`,
           300
         );
@@ -286,15 +314,19 @@ app.post("/webhook", async (req, res) => {
       user.hasOrdered = true;
       if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
 
-      await send(chatId, "you are all set", 300);
-      await send(chatId, "connecting you to Munchy right now", 0);
-      await send(chatId, "Munchy accepted your order", 0);
-      await send(chatId, `you are now connected with Munchy\n\nDM him directly to confirm your order and sort payment\nt.me/Imunchy`, 0);
+      await send(chatId, `${check} You're all set.`, 300);
+      await send(chatId, `${bolt} Connecting you to your order handler now...`, 0);
+      await delay(2000);
+      await send(chatId, `${crown} You're connected.\n\nDM directly to confirm your order and handle payment:\nt.me/Imunchy`, 0);
 
       if (isFreeOrder) {
-        await send(chatId, "this order is on the house. your 6 credits have been applied. enjoy your free order.", 0);
+        await send(chatId, `${gift} This one's on the house. Your 6 credits have been applied. Enjoy.`, 0);
       } else {
-        await send(chatId, `you are saving 65% on this order\n\nearn free orders by referring friends:\nt.me/BiteNowBot?start=${user.refCode}`, 0);
+        await send(
+          chatId,
+          `${fire} You're saving 65% on this order.\n\n${star} Want your next one free?\nInvite people to BiteNow. Every person who orders through your link = 3 credits. 6 credits = free order.\n\nYour link:\nt.me/BiteNowBot?start=${user.refCode}`,
+          0
+        );
       }
 
       await forwardToOwner(session, chatId, user);
@@ -302,20 +334,18 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Photo at wrong stage
     if (photo) {
-      await send(chatId, "type /start first to begin your order", 300);
+      await send(chatId, `Type /start to begin your order.`, 300);
       return;
     }
 
-    // Free chat
     if (text && [STAGE.IDLE, STAGE.WAITING_CART].includes(session.stage)) {
       await send(chatId, getScriptedReply(text), 300);
       return;
     }
 
     if (session.stage === STAGE.WAITING_CART) {
-      await send(chatId, "send your cart screenshot to get started", 300);
+      await send(chatId, `${bolt} Send your cart screenshot to get started.`, 300);
     }
 
   } catch (err) {
