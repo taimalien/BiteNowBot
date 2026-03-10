@@ -291,7 +291,7 @@ app.post("/webhook", async (req, res) => {
       await forwardMsgToOwner(chatId, username, "SELECTED RESTAURANT", chosen);
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: OWNER_CHAT_ID,
-        text: `— ${username} (${chatId})\n[WAITING FOR CART]: ${chosen}\n\nThey are about to send their cart screenshot.`,
+        text: `— ${username} (${chatId})\n[WAITING FOR CART]: ${chosen}\n\nAbout to send cart screenshot.`,
         parse_mode: "HTML",
       }).catch(() => {});
       if (session.stage === STAGE.WAITING_CART) {
@@ -354,7 +354,10 @@ app.post("/webhook", async (req, res) => {
           `${discountLine}\n` +
           `━━━━━━━━━━━━━━━━━━\n\n` +
           `We will reach out shortly with payment details.\n\n` +
-          `◆ Refer friends and stack free orders:\nt.me/BiteNowBot?start=${user.refCode}`,
+          `◆ Refer friends and earn free orders:\n` +
+          `Every person you invite who places an order earns you 3 credits.\n` +
+          `6 credits = your next order is completely free.\n\n` +
+          `Your link:\nt.me/BiteNowBot?start=${user.refCode}`,
         parse_mode: "HTML",
         disable_web_page_preview: true,
       }).catch(() => {});
@@ -419,7 +422,7 @@ app.post("/webhook", async (req, res) => {
     if (["/referral", "/refer", "/getlink"].includes(text)) {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       await forwardMsgToOwner(chatId, session.username, "COMMAND", "/referral");
-      await send(chatId, `◆ Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n◇ Every person you bring in who orders → 3 credits\n◇ 6 credits → your next order is free\n\nCredits: ${user.credits}\nNeeded: ${needed}`);
+      await send(chatId, `◆ Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n◇ Every person you bring in who orders → 3 credits\n◇ 6 credits → your next order is completely free\n\nCredits: ${user.credits}\nNeeded: ${needed}`);
       return;
     }
 
