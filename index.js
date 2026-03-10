@@ -22,15 +22,6 @@ const STAGE = {
 const CREDITS_PER_REFERRAL = 3;
 const CREDITS_FOR_FREE_ORDER = 6;
 
-const crown = `<tg-emoji emoji-id="5368324170671202286">👑</tg-emoji>`;
-const fire  = `<tg-emoji emoji-id="5370870672667374515">🔥</tg-emoji>`;
-const money = `<tg-emoji emoji-id="5373141891321699086">💵</tg-emoji>`;
-const check = `<tg-emoji emoji-id="5368324170671202286">✅</tg-emoji>`;
-const star  = `<tg-emoji emoji-id="5370399154727416166">⭐</tg-emoji>`;
-const bolt  = `<tg-emoji emoji-id="5371168276122820957">⚡</tg-emoji>`;
-const lock  = `<tg-emoji emoji-id="5364240322202782916">🔒</tg-emoji>`;
-const gift  = `<tg-emoji emoji-id="5372981976804366741">🎁</tg-emoji>`;
-
 function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
@@ -104,19 +95,34 @@ async function send(chatId, text) {
   await delay(500);
 }
 
+async function notifyOwnerNewUser(chatId, username) {
+  await axios.post(`${TELEGRAM_API}/sendMessage`, {
+    chat_id: OWNER_CHAT_ID,
+    text:
+      `👤 New session started\n\n` +
+      `Customer: ${username}\n` +
+      `ID: ${chatId}\n\n` +
+      `To reply to them through the bot, send:\n` +
+      `/reply ${chatId} your message here`,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }).catch(() => {});
+}
+
 async function forwardToOwner(session, chatId, user) {
   const freeNote = user.credits >= CREDITS_FOR_FREE_ORDER
-    ? "\nFREE ORDER — credits applied\n" : "";
+    ? "\n🎁 FREE ORDER — credits applied\n" : "";
 
   const caption =
-    `NEW ORDER — @BiteNowBot\n\n` +
-    `Customer: ${session.username || chatId}\n` +
-    `Address: ${session.fullAddress}\n` +
-    `Phone: ${session.phone}\n` +
-    `Email: ${session.email}\n` +
-    `Credits: ${user.credits}${freeNote}\n\n` +
-    `Saving 65%\n\n` +
-    `Reply: t.me/${session.username?.replace("@", "") || chatId}`;
+    `🔥 NEW ORDER — @BiteNowBot\n\n` +
+    `👤 Customer: ${session.username || chatId}\n` +
+    `📍 Address: ${session.fullAddress}\n` +
+    `📞 Phone: ${session.phone}\n` +
+    `📧 Email: ${session.email}\n` +
+    `⭐ Credits: ${user.credits}${freeNote}\n\n` +
+    `💵 Saving 65%\n\n` +
+    `💬 Reply: t.me/${session.username?.replace("@", "") || chatId}\n\n` +
+    `Or reply through bot:\n/reply ${chatId} your message here`;
 
   if (session.cartFileId) {
     await axios.post(`${TELEGRAM_API}/sendPhoto`, {
@@ -137,35 +143,35 @@ async function forwardToOwner(session, chatId, user) {
 const FAQ = [
   {
     keys: ["how", "work", "works"],
-    reply: `${bolt} Simple. You send your cart, we place the order. You pay 65% less. Every time.`,
+    reply: `⚡ Simple. You send your cart, we place the order. You pay 65% less. Every time.`,
   },
   {
     keys: ["save", "65", "percent", "discount"],
-    reply: `${lock} We have access you don't. Don't worry about how — just know it works.`,
+    reply: `🔒 We have access you don't. Don't worry about how — just know it works.`,
   },
   {
     keys: ["pay", "payment", "cost", "price"],
-    reply: `${money} You pay after your order is confirmed. We accept CashApp, Apple Pay, Zelle, and crypto.`,
+    reply: `💵 You pay after your order is confirmed. We accept CashApp, Apple Pay, Zelle, and crypto.`,
   },
   {
     keys: ["restaurant", "restaurants", "where", "place", "which"],
-    reply: `${fire} We cover Dominos, Papa Johns, Subway, Churchs Chicken, Five Guys, Jersey Mikes, Panda Express, Auntie Annes, Insomnia Cookies, Panera, Applebees, Olive Garden, Jack in the Box, CAVA and more.`,
+    reply: `🔥 We cover Dominos, Papa Johns, Subway, Churchs Chicken, Five Guys, Jersey Mikes, Panda Express, Auntie Annes, Insomnia Cookies, Panera, Applebees, Olive Garden, Jack in the Box, CAVA and more.`,
   },
   {
     keys: ["long", "fast", "time", "quick", "wait"],
-    reply: `${bolt} Once your order is in, we move immediately. No delays on our end.`,
+    reply: `⚡ Once your order is in, we move immediately. No delays on our end.`,
   },
   {
     keys: ["real", "legit", "scam", "trust", "safe", "fake"],
-    reply: `${check} BiteNow is the real deal. Every order gets placed. Every customer saves. We don't play games.`,
+    reply: `✅ BiteNow is the real deal. Every order gets placed. Every customer saves. We don't play games.`,
   },
   {
     keys: ["refer", "referral", "invite", "link", "credits", "credit", "free"],
-    reply: `${gift} Type /referral to get your personal invite link.\n\nEvery person you bring in who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.`,
+    reply: `🎁 Type /referral to get your personal invite link.\n\nEvery person you bring in who places an order earns you 3 credits.\n👑 6 credits = your next order is completely free.`,
   },
   {
     keys: ["hi", "hey", "hello", "sup", "yo", "hii", "heyy", "helo"],
-    reply: `${crown} Welcome to BiteNow. Send your cart screenshot and we'll handle the rest.`,
+    reply: `👑 Welcome to BiteNow. Send your cart screenshot and we'll handle the rest.`,
   },
 ];
 
@@ -174,7 +180,7 @@ function getScriptedReply(text) {
   for (const faq of FAQ) {
     if (faq.keys.some((k) => lower.includes(k))) return faq.reply;
   }
-  return `${bolt} Send your cart screenshot and we'll get you 65% off.`;
+  return `⚡ Send your cart screenshot and we'll get you 65% off.`;
 }
 
 app.get("/setup", async (req, res) => {
@@ -212,6 +218,21 @@ app.post("/webhook", async (req, res) => {
     ? `@${msg.from.username}`
     : msg.from?.first_name || String(chatId);
 
+  // Owner sending /reply {chatId} {message}
+  if (chatId === OWNER_CHAT_ID && text.startsWith("/reply ")) {
+    const parts = text.split(" ");
+    const targetId = parts[1];
+    const replyText = parts.slice(2).join(" ");
+    if (targetId && replyText) {
+      await send(targetId, `💬 Message from BiteNow:\n\n${replyText}`);
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: OWNER_CHAT_ID,
+        text: `✅ Message sent to ${targetId}`,
+      }).catch(() => {});
+    }
+    return;
+  }
+
   try {
     if (text.startsWith("/start")) {
       const parts = text.split(" ");
@@ -225,9 +246,12 @@ app.post("/webhook", async (req, res) => {
       resetSession(session);
       session.stage = STAGE.WAITING_CART;
 
-      await send(chatId, `${crown} Welcome to BiteNow.`);
-      await send(chatId, `${fire} We place your food order and you pay 65% less. Every single time.`);
-      await send(chatId, `${bolt} Send your cart screenshot to get started.`);
+      // Notify owner of new session
+      await notifyOwnerNewUser(chatId, session.username);
+
+      await send(chatId, `👑 Welcome to BiteNow.`);
+      await send(chatId, `🔥 We place your food order and you pay 65% less. Every single time.`);
+      await send(chatId, `⚡ Send your cart screenshot to get started.`);
       return;
     }
 
@@ -235,7 +259,7 @@ app.post("/webhook", async (req, res) => {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       await send(
         chatId,
-        `${gift} Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n${star} Every person you invite who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.\n\nYour credits: ${user.credits}\nCredits until free order: ${needed}`
+        `🎁 Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n⭐ Every person you invite who places an order earns you 3 credits.\n👑 6 credits = your next order is completely free.\n\nYour credits: ${user.credits}\nCredits until free order: ${needed}`
       );
       return;
     }
@@ -243,9 +267,9 @@ app.post("/webhook", async (req, res) => {
     if (text === "/credits") {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       if (user.credits >= CREDITS_FOR_FREE_ORDER) {
-        await send(chatId, `${gift} You have ${user.credits} credits — your next order is free. Place your order and it will be applied automatically.`);
+        await send(chatId, `🎁 You have ${user.credits} credits — your next order is free. Place your order and it will be applied automatically.`);
       } else {
-        await send(chatId, `${star} You have ${user.credits} credits. You need ${needed} more for a free order.\n\nGet your referral link: /referral`);
+        await send(chatId, `⭐ You have ${user.credits} credits. You need ${needed} more for a free order.\n\nGet your referral link: /referral`);
       }
       return;
     }
@@ -254,7 +278,15 @@ app.post("/webhook", async (req, res) => {
       session.cartFileId = photo[photo.length - 1].file_id;
       session.stage = STAGE.WAITING_ADDRESS;
       session.addressStep = "street";
-      await send(chatId, `${check} Cart received. Let's get your details.`);
+
+      // Forward cart photo to owner for visibility
+      await axios.post(`${TELEGRAM_API}/sendPhoto`, {
+        chat_id: OWNER_CHAT_ID,
+        photo: session.cartFileId,
+        caption: `🛒 Cart received from ${session.username} (${chatId})`,
+      }).catch(() => {});
+
+      await send(chatId, `✅ Cart received. Let's get your details.`);
       await send(chatId, `Street Address:`);
       return;
     }
@@ -294,7 +326,7 @@ app.post("/webhook", async (req, res) => {
         const apt = session.addressLine2 ? `, ${session.addressLine2}` : "";
         session.fullAddress = `${session.address}${apt}, ${session.city}, ${session.state} ${session.zip}`;
         session.stage = STAGE.WAITING_PHONE;
-        await send(chatId, `${check} Got it.`);
+        await send(chatId, `✅ Got it.`);
         await send(chatId, `Phone Number:`);
         return;
       }
@@ -303,7 +335,7 @@ app.post("/webhook", async (req, res) => {
     if (session.stage === STAGE.WAITING_PHONE && text) {
       session.phone = text;
       session.stage = STAGE.WAITING_EMAIL;
-      await send(chatId, `${check} Got it.`);
+      await send(chatId, `✅ Got it.`);
       await send(chatId, `Email Address:`);
       return;
     }
@@ -320,10 +352,10 @@ app.post("/webhook", async (req, res) => {
         const refNeeded = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
         await send(
           user.referredBy,
-          `${star} Someone you referred just placed their first order.\n\n${gift} You earned 3 credits. Total: ${referrer.credits} credits.\n\n${
+          `⭐ Someone you referred just placed their first order.\n\n🎁 You earned 3 credits. Total: ${referrer.credits} credits.\n\n${
             referrer.credits >= CREDITS_FOR_FREE_ORDER
-              ? `${crown} You now have a free order ready. Use it on your next order.`
-              : `${bolt} ${refNeeded} more credits and your next order is free.`
+              ? `👑 You now have a free order ready. Use it on your next order.`
+              : `⚡ ${refNeeded} more credits and your next order is free.`
           }`
         );
       }
@@ -331,15 +363,15 @@ app.post("/webhook", async (req, res) => {
       user.hasOrdered = true;
       if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
 
-      await send(chatId, `${check} You're all set.`);
-      await send(chatId, `${bolt} Connecting you to your order handler now...`);
+      await send(chatId, `✅ You're all set.`);
+      await send(chatId, `⚡ Connecting you to your order handler now...`);
       await delay(2000);
-      await send(chatId, `${crown} You're connected.\n\nDM directly to confirm your order and handle payment:\nt.me/Imunchy`);
+      await send(chatId, `👑 You're connected.\n\nDM directly to confirm your order and handle payment:\nt.me/Imunchy`);
 
       if (isFreeOrder) {
-        await send(chatId, `${gift} This one's on the house. Your 6 credits have been applied. Enjoy.`);
+        await send(chatId, `🎁 This one's on the house. Your 6 credits have been applied. Enjoy.`);
       } else {
-        await send(chatId, `${fire} You're saving 65% on this order.\n\n${star} Want your next one free?\nInvite people to BiteNow. Every person who orders through your link = 3 credits. 6 credits = free order.\n\nYour link:\nt.me/BiteNowBot?start=${user.refCode}`);
+        await send(chatId, `🔥 You're saving 65% on this order.\n\n⭐ Want your next one free?\nInvite people to BiteNow. Every person who orders through your link = 3 credits. 6 credits = free order.\n\nYour link:\nt.me/BiteNowBot?start=${user.refCode}`);
       }
 
       await forwardToOwner(session, chatId, user);
@@ -358,7 +390,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (session.stage === STAGE.WAITING_CART) {
-      await send(chatId, `${bolt} Send your cart screenshot to get started.`);
+      await send(chatId, `⚡ Send your cart screenshot to get started.`);
     }
 
   } catch (err) {
