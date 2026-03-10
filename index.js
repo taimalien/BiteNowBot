@@ -92,16 +92,16 @@ async function sendTyping(chatId) {
   }).catch(() => {});
 }
 
-async function send(chatId, text, pauseBefore = 800) {
-  await delay(pauseBefore);
+async function send(chatId, text) {
   await sendTyping(chatId);
-  await delay(1000);
+  await delay(1500);
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
   }).catch((e) => console.error("sendMessage error:", e?.response?.data));
+  await delay(500);
 }
 
 async function forwardToOwner(session, chatId, user) {
@@ -225,9 +225,9 @@ app.post("/webhook", async (req, res) => {
       resetSession(session);
       session.stage = STAGE.WAITING_CART;
 
-      await send(chatId, `${crown} Welcome to BiteNow.`, 300);
-      await send(chatId, `${fire} We place your food order and you pay 65% less. Every single time.`, 0);
-      await send(chatId, `${bolt} Send your cart screenshot to get started.`, 0);
+      await send(chatId, `${crown} Welcome to BiteNow.`);
+      await send(chatId, `${fire} We place your food order and you pay 65% less. Every single time.`);
+      await send(chatId, `${bolt} Send your cart screenshot to get started.`);
       return;
     }
 
@@ -235,8 +235,7 @@ app.post("/webhook", async (req, res) => {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       await send(
         chatId,
-        `${gift} Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n${star} Every person you invite who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.\n\nYour credits: ${user.credits}\nCredits until free order: ${needed}`,
-        300
+        `${gift} Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n${star} Every person you invite who places an order earns you 3 credits.\n${crown} 6 credits = your next order is completely free.\n\nYour credits: ${user.credits}\nCredits until free order: ${needed}`
       );
       return;
     }
@@ -244,9 +243,9 @@ app.post("/webhook", async (req, res) => {
     if (text === "/credits") {
       const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
       if (user.credits >= CREDITS_FOR_FREE_ORDER) {
-        await send(chatId, `${gift} You have ${user.credits} credits — your next order is free. Place your order and it will be applied automatically.`, 300);
+        await send(chatId, `${gift} You have ${user.credits} credits — your next order is free. Place your order and it will be applied automatically.`);
       } else {
-        await send(chatId, `${star} You have ${user.credits} credits. You need ${needed} more for a free order.\n\nGet your referral link: /referral`, 300);
+        await send(chatId, `${star} You have ${user.credits} credits. You need ${needed} more for a free order.\n\nGet your referral link: /referral`);
       }
       return;
     }
@@ -255,8 +254,8 @@ app.post("/webhook", async (req, res) => {
       session.cartFileId = photo[photo.length - 1].file_id;
       session.stage = STAGE.WAITING_ADDRESS;
       session.addressStep = "street";
-      await send(chatId, `${check} Cart received. Let's get your details.`, 300);
-      await send(chatId, `Street Address:`, 0);
+      await send(chatId, `${check} Cart received. Let's get your details.`);
+      await send(chatId, `Street Address:`);
       return;
     }
 
@@ -264,39 +263,39 @@ app.post("/webhook", async (req, res) => {
       if (session.addressStep === "street") {
         session.address = text;
         session.addressStep = "apt";
-        await send(chatId, `Apt or Unit number (type - to skip):`, 300);
+        await send(chatId, `Apt or Unit number (type - to skip):`);
         return;
       }
       if (session.addressStep === "apt") {
         const skip = ["-", "--", "none", "skip", "na", "n/a", "no"];
         session.addressLine2 = skip.includes(text.toLowerCase()) ? null : text;
         session.addressStep = "city";
-        await send(chatId, `City:`, 300);
+        await send(chatId, `City:`);
         return;
       }
       if (session.addressStep === "city") {
         session.city = text;
         session.addressStep = "state";
-        await send(chatId, `State:`, 300);
+        await send(chatId, `State:`);
         return;
       }
       if (session.addressStep === "state") {
         session.state = text;
         session.addressStep = "zip";
-        await send(chatId, `ZIP Code:`, 300);
+        await send(chatId, `ZIP Code:`);
         return;
       }
       if (session.addressStep === "zip") {
         if (!/^\d{5}$/.test(text)) {
-          await send(chatId, `Please enter a valid 5-digit ZIP code:`, 300);
+          await send(chatId, `Please enter a valid 5-digit ZIP code:`);
           return;
         }
         session.zip = text;
         const apt = session.addressLine2 ? `, ${session.addressLine2}` : "";
         session.fullAddress = `${session.address}${apt}, ${session.city}, ${session.state} ${session.zip}`;
         session.stage = STAGE.WAITING_PHONE;
-        await send(chatId, `${check} Got it.`, 300);
-        await send(chatId, `Phone Number:`, 0);
+        await send(chatId, `${check} Got it.`);
+        await send(chatId, `Phone Number:`);
         return;
       }
     }
@@ -304,8 +303,8 @@ app.post("/webhook", async (req, res) => {
     if (session.stage === STAGE.WAITING_PHONE && text) {
       session.phone = text;
       session.stage = STAGE.WAITING_EMAIL;
-      await send(chatId, `${check} Got it.`, 300);
-      await send(chatId, `Email Address:`, 0);
+      await send(chatId, `${check} Got it.`);
+      await send(chatId, `Email Address:`);
       return;
     }
 
@@ -325,27 +324,22 @@ app.post("/webhook", async (req, res) => {
             referrer.credits >= CREDITS_FOR_FREE_ORDER
               ? `${crown} You now have a free order ready. Use it on your next order.`
               : `${bolt} ${refNeeded} more credits and your next order is free.`
-          }`,
-          300
+          }`
         );
       }
 
       user.hasOrdered = true;
       if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
 
-      await send(chatId, `${check} You're all set.`, 300);
-      await send(chatId, `${bolt} Connecting you to your order handler now...`, 0);
+      await send(chatId, `${check} You're all set.`);
+      await send(chatId, `${bolt} Connecting you to your order handler now...`);
       await delay(2000);
-      await send(chatId, `${crown} You're connected.\n\nDM directly to confirm your order and handle payment:\nt.me/Imunchy`, 0);
+      await send(chatId, `${crown} You're connected.\n\nDM directly to confirm your order and handle payment:\nt.me/Imunchy`);
 
       if (isFreeOrder) {
-        await send(chatId, `${gift} This one's on the house. Your 6 credits have been applied. Enjoy.`, 0);
+        await send(chatId, `${gift} This one's on the house. Your 6 credits have been applied. Enjoy.`);
       } else {
-        await send(
-          chatId,
-          `${fire} You're saving 65% on this order.\n\n${star} Want your next one free?\nInvite people to BiteNow. Every person who orders through your link = 3 credits. 6 credits = free order.\n\nYour link:\nt.me/BiteNowBot?start=${user.refCode}`,
-          0
-        );
+        await send(chatId, `${fire} You're saving 65% on this order.\n\n${star} Want your next one free?\nInvite people to BiteNow. Every person who orders through your link = 3 credits. 6 credits = free order.\n\nYour link:\nt.me/BiteNowBot?start=${user.refCode}`);
       }
 
       await forwardToOwner(session, chatId, user);
@@ -354,17 +348,17 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (photo) {
-      await send(chatId, `Type /start to begin your order.`, 300);
+      await send(chatId, `Type /start to begin your order.`);
       return;
     }
 
     if (text && [STAGE.IDLE, STAGE.WAITING_CART].includes(session.stage)) {
-      await send(chatId, getScriptedReply(text), 300);
+      await send(chatId, getScriptedReply(text));
       return;
     }
 
     if (session.stage === STAGE.WAITING_CART) {
-      await send(chatId, `${bolt} Send your cart screenshot to get started.`, 300);
+      await send(chatId, `${bolt} Send your cart screenshot to get started.`);
     }
 
   } catch (err) {
