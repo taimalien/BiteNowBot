@@ -16,11 +16,19 @@ const STAGE = {
   WAITING_ADDRESS: "waiting_address",
   WAITING_PHONE: "waiting_phone",
   WAITING_EMAIL: "waiting_email",
+  WAITING_PAYMENT: "waiting_payment",
   DONE: "done",
 };
 
 const CREDITS_PER_REFERRAL = 3;
 const CREDITS_FOR_FREE_ORDER = 6;
+
+let orderCounter = 1487;
+
+function generateOrderId() {
+  orderCounter++;
+  return `ORD-${orderCounter}`;
+}
 
 function getUser(chatId) {
   if (!users[chatId]) {
@@ -39,6 +47,7 @@ function getSession(chatId) {
       stage: STAGE.IDLE, cartFileId: null, address: null, addressLine2: null,
       city: null, state: null, zip: null, fullAddress: null,
       phone: null, email: null, username: null, addressStep: "street",
+      paymentMethod: null, orderId: null, selectedRestaurant: null,
     };
   }
   return sessions[chatId];
@@ -49,7 +58,8 @@ function resetSession(session) {
   session.cartFileId = null; session.address = null; session.addressLine2 = null;
   session.city = null; session.state = null; session.zip = null;
   session.fullAddress = null; session.phone = null; session.email = null;
-  session.addressStep = "street";
+  session.addressStep = "street"; session.paymentMethod = null;
+  session.orderId = null; session.selectedRestaurant = null;
 }
 
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -64,6 +74,23 @@ async function send(chatId, text) {
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true,
   }).catch((e) => console.error("sendMessage error:", e?.response?.data));
+  await delay(500);
+}
+
+async function sendPaymentButtons(chatId) {
+  await sendTyping(chatId);
+  await delay(1500);
+  await axios.post(`${TELEGRAM_API}/sendMessage`, {
+    chat_id: chatId,
+    text: `◆ Select your payment method:`,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "CashApp", callback_data: "pay_cashapp" }, { text: "Apple Pay", callback_data: "pay_applepay" }],
+        [{ text: "Zelle", callback_data: "pay_zelle" }, { text: "Crypto", callback_data: "pay_crypto" }],
+      ],
+    },
+  }).catch((e) => console.error("sendPaymentButtons error:", e?.response?.data));
   await delay(500);
 }
 
@@ -116,10 +143,13 @@ async function forwardToOwner(session, chatId, user) {
   const firstOrder = !user.hasOrdered ? "\n◆ FIRST ORDER — 70% off\n" : "";
   const caption =
     `— NEW ORDER —\n\n` +
+    `Order ID: ${session.orderId}\n` +
     `Customer: ${session.username || chatId}\n` +
+    `Restaurant: ${session.selectedRestaurant || "Not selected"}\n` +
     `Address: ${session.fullAddress}\n` +
     `Phone: ${session.phone}\n` +
     `Email: ${session.email}\n` +
+    `Payment: ${session.paymentMethod}\n` +
     `Credits: ${user.credits}${freeNote}${firstOrder}\n\n` +
     `t.me/${session.username?.replace("@", "") || chatId}\n` +
     `/reply ${chatId} your message`;
@@ -237,16 +267,18 @@ app.post("/webhook", async (req, res) => {
   const msg = body?.message;
   const callbackQuery = body?.callback_query;
 
-  // Handle restaurant button taps
+  // Handle button taps
   if (callbackQuery) {
     const chatId = String(callbackQuery.message.chat.id);
     const data = callbackQuery.data;
     const session = getSession(chatId);
+    const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : callbackQuery.from?.first_name || chatId;
 
     await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
       callback_query_id: callbackQuery.id,
     }).catch(() => {});
 
+    // Restaurant selection
     if (data.startsWith("rest_")) {
       const names = {
         rest_dominos: "Dominos", rest_papajohns: "Papa Johns", rest_subway: "Subway",
@@ -258,9 +290,14 @@ app.post("/webhook", async (req, res) => {
         rest_urbanbird: "Urban Bird Hot Chicken", rest_gyrohut: "Gyro Hut",
       };
       const chosen = names[data] || "Unknown";
-      const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : callbackQuery.from?.first_name || chatId;
+      session.selectedRestaurant = chosen;
 
       await forwardMsgToOwner(chatId, username, "SELECTED RESTAURANT", chosen);
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: OWNER_CHAT_ID,
+        text: `— ${username} (${chatId})\n[WAITING FOR CART]: ${chosen}\n\nThey are about to send their cart screenshot.`,
+        parse_mode: "HTML",
+      }).catch(() => {});
 
       if (session.stage === STAGE.WAITING_CART) {
         await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -270,6 +307,64 @@ app.post("/webhook", async (req, res) => {
         }).catch(() => {});
       }
     }
+
+    // Payment selection
+    if (data.startsWith("pay_")) {
+      const methods = {
+        pay_cashapp: "CashApp", pay_applepay: "Apple Pay",
+        pay_zelle: "Zelle", pay_crypto: "Crypto",
+      };
+      const chosen = methods[data] || "Unknown";
+      session.paymentMethod = chosen;
+      session.stage = STAGE.DONE;
+
+      const user = getUser(chatId);
+      const isFreeOrder = user.credits >= CREDITS_FOR_FREE_ORDER;
+      const isFirstOrder = !user.hasOrdered;
+      const discountText = isFreeOrder ? "free — credits applied" : isFirstOrder ? "70% off" : "65% off";
+      const orderId = generateOrderId();
+      session.orderId = orderId;
+
+      await forwardMsgToOwner(chatId, username, "PAYMENT METHOD", chosen);
+
+      if (isFirstOrder && user.referredBy) {
+        const referrer = getUser(user.referredBy);
+        referrer.credits += CREDITS_PER_REFERRAL;
+        const refNeeded = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
+        await axios.post(`${TELEGRAM_API}/sendMessage`, {
+          chat_id: user.referredBy,
+          text: `◆ Someone you brought in just placed their first order.\n\n◇ +3 credits. Total: ${referrer.credits}\n\n${referrer.credits >= CREDITS_FOR_FREE_ORDER ? `Your next order is free. Use it whenever.` : `${refNeeded} more credits until your free order.`}`,
+          parse_mode: "HTML",
+        }).catch(() => {});
+      }
+
+      user.hasOrdered = true;
+      if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
+
+      // Send order submitted confirmation
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: chatId,
+        text:
+          `✔ Order Submitted!\n\n` +
+          `◆ Order ID: ${orderId}\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `${session.selectedRestaurant || "Restaurant"}\n` +
+          `${session.username || chatId}\n` +
+          `${session.fullAddress}\n` +
+          `${session.phone}\n` +
+          `${chosen}\n` +
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `◇ This order is ${discountText}.\n\n` +
+          `We will message you with payment details shortly.\n\n` +
+          `Want your next one free?\nt.me/BiteNowBot?start=${user.refCode}`,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }).catch(() => {});
+
+      await forwardToOwner(session, chatId, user);
+      resetSession(session);
+    }
+
     return;
   }
 
@@ -317,7 +412,6 @@ app.post("/webhook", async (req, res) => {
       const discount = user.hasOrdered ? "65%" : "70%";
       await send(chatId, `◆ Welcome to BiteNow.`);
       await send(chatId, `We place your order. You pay ${discount} less.\n\nEvery. Single. Time.`);
-      await send(chatId, `◇ Send your cart screenshot to get started.`);
       await sendRestaurantMenu(chatId);
       return;
     }
@@ -385,34 +479,9 @@ app.post("/webhook", async (req, res) => {
 
     if (session.stage === STAGE.WAITING_EMAIL && text) {
       session.email = text;
-      session.stage = STAGE.DONE;
-
-      const isFreeOrder = user.credits >= CREDITS_FOR_FREE_ORDER;
-      const isFirstOrder = !user.hasOrdered;
-      const discountText = isFreeOrder ? "free — credits applied" : isFirstOrder ? "70% off" : "65% off";
-
-      if (isFirstOrder && user.referredBy) {
-        const referrer = getUser(user.referredBy);
-        referrer.credits += CREDITS_PER_REFERRAL;
-        const refNeeded = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
-        await axios.post(`${TELEGRAM_API}/sendMessage`, {
-          chat_id: user.referredBy,
-          text: `◆ Someone you brought in just placed their first order.\n\n◇ +3 credits. Total: ${referrer.credits}\n\n${referrer.credits >= CREDITS_FOR_FREE_ORDER ? `Your next order is free. Use it whenever.` : `${refNeeded} more credits until your free order.`}`,
-          parse_mode: "HTML",
-        }).catch(() => {});
-      }
-
-      user.hasOrdered = true;
-      if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
-
-      await send(chatId, `◆ You're locked in.`);
-      await send(chatId, `Connecting you now...`);
-      await delay(2000);
-      await send(chatId, `◆ You're in.\n\nFinish up directly here:\nt.me/lovedtimo`);
-      await send(chatId, `◇ This order is ${discountText}.\n\nWant your next one free?\nBring people in → 3 credits per order → 6 credits = free order.\n\nt.me/BiteNowBot?start=${user.refCode}`);
-
-      await forwardToOwner(session, chatId, user);
-      resetSession(session);
+      session.stage = STAGE.WAITING_PAYMENT;
+      await send(chatId, `◆ Almost done.`);
+      await sendPaymentButtons(chatId);
       return;
     }
 
