@@ -267,18 +267,15 @@ app.post("/webhook", async (req, res) => {
   const msg = body?.message;
   const callbackQuery = body?.callback_query;
 
-  // Handle button taps
   if (callbackQuery) {
     const chatId = String(callbackQuery.message.chat.id);
     const data = callbackQuery.data;
     const session = getSession(chatId);
+    const user = getUser(chatId);
     const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : callbackQuery.from?.first_name || chatId;
 
-    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
-      callback_query_id: callbackQuery.id,
-    }).catch(() => {});
+    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id }).catch(() => {});
 
-    // Restaurant selection
     if (data.startsWith("rest_")) {
       const names = {
         rest_dominos: "Dominos", rest_papajohns: "Papa Johns", rest_subway: "Subway",
@@ -291,14 +288,12 @@ app.post("/webhook", async (req, res) => {
       };
       const chosen = names[data] || "Unknown";
       session.selectedRestaurant = chosen;
-
       await forwardMsgToOwner(chatId, username, "SELECTED RESTAURANT", chosen);
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: OWNER_CHAT_ID,
         text: `— ${username} (${chatId})\n[WAITING FOR CART]: ${chosen}\n\nThey are about to send their cart screenshot.`,
         parse_mode: "HTML",
       }).catch(() => {});
-
       if (session.stage === STAGE.WAITING_CART) {
         await axios.post(`${TELEGRAM_API}/sendMessage`, {
           chat_id: chatId,
@@ -308,7 +303,6 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // Payment selection
     if (data.startsWith("pay_")) {
       const methods = {
         pay_cashapp: "CashApp", pay_applepay: "Apple Pay",
@@ -316,12 +310,9 @@ app.post("/webhook", async (req, res) => {
       };
       const chosen = methods[data] || "Unknown";
       session.paymentMethod = chosen;
-      session.stage = STAGE.DONE;
 
-      const user = getUser(chatId);
       const isFreeOrder = user.credits >= CREDITS_FOR_FREE_ORDER;
       const isFirstOrder = !user.hasOrdered;
-      const discountText = isFreeOrder ? "free — credits applied" : isFirstOrder ? "70% off" : "65% off";
       const orderId = generateOrderId();
       session.orderId = orderId;
 
@@ -341,22 +332,29 @@ app.post("/webhook", async (req, res) => {
       user.hasOrdered = true;
       if (isFreeOrder) user.credits -= CREDITS_FOR_FREE_ORDER;
 
-      // Send order submitted confirmation
+      const discountLine = isFreeOrder
+        ? `◇ This one is on us — credits applied.`
+        : isFirstOrder
+        ? `◇ First order bonus — 70% off applied.\n◇ Every order after this is 65% off.`
+        : `◇ 65% off applied.`;
+
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: chatId,
         text:
-          `✔ Order Submitted!\n\n` +
-          `◆ Order ID: ${orderId}\n\n` +
+          `◆ Order Submitted\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `${session.selectedRestaurant || "Restaurant"}\n` +
-          `${session.username || chatId}\n` +
-          `${session.fullAddress}\n` +
-          `${session.phone}\n` +
-          `${chosen}\n` +
+          `Order ID: ${orderId}\n` +
           `━━━━━━━━━━━━━━━━━━\n\n` +
-          `◇ This order is ${discountText}.\n\n` +
-          `We will message you with payment details shortly.\n\n` +
-          `Want your next one free?\nt.me/BiteNowBot?start=${user.refCode}`,
+          `Restaurant: ${session.selectedRestaurant || "Not selected"}\n` +
+          `Name: ${username}\n` +
+          `Address: ${session.fullAddress}\n` +
+          `Phone: ${session.phone}\n` +
+          `Payment: ${chosen}\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `${discountLine}\n` +
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `We will reach out shortly with payment details.\n\n` +
+          `◆ Refer friends and stack free orders:\nt.me/BiteNowBot?start=${user.refCode}`,
         parse_mode: "HTML",
         disable_web_page_preview: true,
       }).catch(() => {});
@@ -378,7 +376,6 @@ app.post("/webhook", async (req, res) => {
 
   session.username = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || String(chatId);
 
-  // Owner /reply
   if (chatId === OWNER_CHAT_ID && text.startsWith("/reply ")) {
     const parts = text.split(" ");
     const targetId = parts[1];
@@ -398,17 +395,13 @@ app.post("/webhook", async (req, res) => {
     if (text.startsWith("/start")) {
       const parts = text.split(" ");
       const refCode = parts[1] || null;
-
       if (refCode && !user.referredBy) {
         const referrer = findUserByRefCode(refCode);
         if (referrer && referrer[0] !== chatId) user.referredBy = referrer[0];
       }
-
       resetSession(session);
       session.stage = STAGE.WAITING_CART;
-
       await forwardMsgToOwner(chatId, session.username, "SESSION STARTED", "/start");
-
       const discount = user.hasOrdered ? "65%" : "70%";
       await send(chatId, `◆ Welcome to BiteNow.`);
       await send(chatId, `We place your order. You pay ${discount} less.\n\nEvery. Single. Time.`);
