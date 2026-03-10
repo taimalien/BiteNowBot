@@ -22,14 +22,14 @@ const STAGE = {
 const CREDITS_PER_REFERRAL = 3;
 const CREDITS_FOR_FREE_ORDER = 6;
 
-const crown  = `<tg-emoji emoji-id="5368324170671202286">👑</tg-emoji>`;
-const fire   = `<tg-emoji emoji-id="5370870672667374515">🔥</tg-emoji>`;
-const money  = `<tg-emoji emoji-id="5373141891321699086">💵</tg-emoji>`;
-const check  = `<tg-emoji emoji-id="5368324170671202286">✅</tg-emoji>`;
-const star   = `<tg-emoji emoji-id="5370399154727416166">⭐</tg-emoji>`;
-const bolt   = `<tg-emoji emoji-id="5371168276122820957">⚡</tg-emoji>`;
-const lock   = `<tg-emoji emoji-id="5364240322202782916">🔒</tg-emoji>`;
-const gift   = `<tg-emoji emoji-id="5372981976804366741">🎁</tg-emoji>`;
+const crown = `<tg-emoji emoji-id="5368324170671202286">👑</tg-emoji>`;
+const fire  = `<tg-emoji emoji-id="5370870672667374515">🔥</tg-emoji>`;
+const money = `<tg-emoji emoji-id="5373141891321699086">💵</tg-emoji>`;
+const check = `<tg-emoji emoji-id="5368324170671202286">✅</tg-emoji>`;
+const star  = `<tg-emoji emoji-id="5370399154727416166">⭐</tg-emoji>`;
+const bolt  = `<tg-emoji emoji-id="5371168276122820957">⚡</tg-emoji>`;
+const lock  = `<tg-emoji emoji-id="5364240322202782916">🔒</tg-emoji>`;
+const gift  = `<tg-emoji emoji-id="5372981976804366741">🎁</tg-emoji>`;
 
 function getUser(chatId) {
   if (!users[chatId]) {
@@ -176,6 +176,30 @@ function getScriptedReply(text) {
   }
   return `${bolt} Send your cart screenshot and we'll get you 65% off.`;
 }
+
+// ── Setup endpoint — visit once to register menu commands ──────────────────
+app.get("/setup", async (req, res) => {
+  try {
+    // Set bot commands (shows in Menu)
+    await axios.post(`${TELEGRAM_API}/setMyCommands`, {
+      commands: [
+        { command: "start",    description: "Place an order — save 65%" },
+        { command: "referral", description: "Get your referral link" },
+        { command: "credits",  description: "Check your credit balance" },
+      ],
+    });
+
+    // Set menu button to show commands
+    await axios.post(`${TELEGRAM_API}/setChatMenuButton`, {
+      menu_button: { type: "commands" },
+    });
+
+    res.send("Setup complete. Menu and commands are registered.");
+  } catch (e) {
+    console.error(e?.response?.data);
+    res.status(500).send("Setup failed.");
+  }
+});
 
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
@@ -357,3 +381,8 @@ app.get("/", (req, res) => res.send("@BiteNowBot is live"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`@BiteNowBot running on port ${PORT}`));
+```
+
+After you push and deploy, visit this URL once in your browser to activate the menu:
+```
+https://bitenowbot-production.up.railway.app/setup
