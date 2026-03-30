@@ -40,37 +40,37 @@ const SKIP_WORDS = new Set(["-", "--", "none", "skip", "na", "n/a", "no"]);
 let orderCounter = 1487;
 const sessions = {};
 const users = {};
-const processedUpdates = new Set(); // deduplicate webhook re-deliveries
+const processedUpdates = new Set();
 
-// ─── Restaurant map ───────────────────────────────────────────────────────────
+// ─── Maps ─────────────────────────────────────────────────────────────────────
 
 const RESTAURANT_MAP = {
-  rest_dominos:    "Dominos",
-  rest_papajohns:  "Papa Johns",
-  rest_subway:     "Subway",
-  rest_fiveguys:   "Five Guys",
-  rest_jerseymikes:"Jersey Mikes",
+  rest_dominos:     "Dominos",
+  rest_papajohns:   "Papa Johns",
+  rest_subway:      "Subway",
+  rest_fiveguys:    "Five Guys",
+  rest_jerseymikes: "Jersey Mikes",
   rest_jackinthebox:"Jack in the Box",
-  rest_churchs:    "Churchs Chicken",
-  rest_panda:      "Panda Express",
-  rest_85c:        "85C Bakery Cafe",
-  rest_panera:     "Panera",
-  rest_applebees:  "Applebees",
-  rest_olivegarden:"Olive Garden",
-  rest_cava:       "CAVA",
-  rest_insomnia:   "Insomnia Cookies",
-  rest_auntie:     "Auntie Annes",
-  rest_shipleys:   "Shipleys Do-Nuts",
-  rest_mainbird:   "Main Bird Hot Chicken",
-  rest_urbanbird:  "Urban Bird Hot Chicken",
-  rest_gyrohut:    "Gyro Hut",
+  rest_churchs:     "Churchs Chicken",
+  rest_panda:       "Panda Express",
+  rest_85c:         "85C Bakery Cafe",
+  rest_panera:      "Panera",
+  rest_applebees:   "Applebees",
+  rest_olivegarden: "Olive Garden",
+  rest_cava:        "CAVA",
+  rest_insomnia:    "Insomnia Cookies",
+  rest_auntie:      "Auntie Annes",
+  rest_shipleys:    "Shipleys Do-Nuts",
+  rest_mainbird:    "Main Bird Hot Chicken",
+  rest_urbanbird:   "Urban Bird Hot Chicken",
+  rest_gyrohut:     "Gyro Hut",
 };
 
 const PAYMENT_MAP = {
-  pay_cashapp:   "CashApp",
-  pay_applepay:  "Apple Pay",
-  pay_zelle:     "Zelle",
-  pay_crypto:    "Crypto",
+  pay_cashapp:  "CashApp",
+  pay_applepay: "Apple Pay",
+  pay_zelle:    "Zelle",
+  pay_crypto:   "Crypto",
 };
 
 // ─── User & session helpers ───────────────────────────────────────────────────
@@ -97,9 +97,7 @@ function findUserByRefCode(code) {
 }
 
 function getSession(chatId) {
-  if (!sessions[chatId]) {
-    sessions[chatId] = buildFreshSession();
-  }
+  if (!sessions[chatId]) sessions[chatId] = buildFreshSession();
   return sessions[chatId];
 }
 
@@ -124,10 +122,10 @@ function buildFreshSession() {
 }
 
 function resetSession(chatId) {
+  const username = sessions[chatId]?.username ?? null;
   sessions[chatId] = buildFreshSession();
   sessions[chatId].stage = STAGE.WAITING_CART;
-  // Preserve username if we already know it
-  if (sessions[chatId]) sessions[chatId].username = sessions[chatId]?.username ?? null;
+  sessions[chatId].username = username;
   return sessions[chatId];
 }
 
@@ -143,10 +141,10 @@ async function telegramPost(method, payload, retries = 2) {
     } catch (err) {
       const isLast = attempt === retries;
       if (isLast) {
-        console.error(`Telegram ${method} failed after ${retries + 1} attempts:`, err?.response?.data ?? err.message);
+        console.error(`Telegram ${method} failed:`, err?.response?.data ?? err.message);
         return null;
       }
-      await delay(600 * (attempt + 1)); // back-off: 600ms, 1200ms
+      await delay(500 * (attempt + 1));
     }
   }
 }
@@ -157,7 +155,7 @@ async function sendTyping(chatId) {
 
 async function send(chatId, text, extra = {}) {
   await sendTyping(chatId);
-  await delay(1200);
+  await delay(300);
   await telegramPost("sendMessage", {
     chat_id: chatId,
     text,
@@ -165,47 +163,47 @@ async function send(chatId, text, extra = {}) {
     disable_web_page_preview: true,
     ...extra,
   });
-  await delay(400);
+  await delay(100);
 }
 
 async function sendWithButtons(chatId, text, inline_keyboard) {
   await sendTyping(chatId);
-  await delay(1200);
+  await delay(300);
   await telegramPost("sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     reply_markup: { inline_keyboard },
   });
-  await delay(400);
+  await delay(100);
 }
 
 async function answerCallback(id) {
   await telegramPost("answerCallbackQuery", { callback_query_id: id });
 }
 
-// ─── Bot UI components ────────────────────────────────────────────────────────
+// ─── Bot UI ───────────────────────────────────────────────────────────────────
 
 function sendPaymentButtons(chatId) {
   return sendWithButtons(chatId, "◆ Select your payment method:", [
-    [{ text: "CashApp", callback_data: "pay_cashapp" }, { text: "Apple Pay", callback_data: "pay_applepay" }],
-    [{ text: "Zelle",   callback_data: "pay_zelle" },   { text: "Crypto",    callback_data: "pay_crypto" }],
+    [{ text: "CashApp",    callback_data: "pay_cashapp"  }, { text: "Apple Pay", callback_data: "pay_applepay" }],
+    [{ text: "Zelle",      callback_data: "pay_zelle"    }, { text: "Crypto",    callback_data: "pay_crypto"   }],
   ]);
 }
 
 function sendRestaurantMenu(chatId) {
   return sendWithButtons(chatId, "◆ Select a restaurant or just send your cart screenshot:", [
-    [{ text: "Dominos",              callback_data: "rest_dominos" },    { text: "Papa Johns",     callback_data: "rest_papajohns" }],
-    [{ text: "Subway",               callback_data: "rest_subway" },     { text: "Five Guys",      callback_data: "rest_fiveguys" }],
-    [{ text: "Jersey Mikes",         callback_data: "rest_jerseymikes" },{ text: "Jack in the Box",callback_data: "rest_jackinthebox" }],
-    [{ text: "Churchs Chicken",      callback_data: "rest_churchs" },    { text: "Panda Express",  callback_data: "rest_panda" }],
-    [{ text: "85C Bakery",           callback_data: "rest_85c" },        { text: "Panera",         callback_data: "rest_panera" }],
-    [{ text: "Applebees",            callback_data: "rest_applebees" },  { text: "Olive Garden",   callback_data: "rest_olivegarden" }],
-    [{ text: "CAVA",                 callback_data: "rest_cava" },       { text: "Insomnia Cookies",callback_data: "rest_insomnia" }],
-    [{ text: "Auntie Annes",         callback_data: "rest_auntie" },     { text: "Shipleys Do-Nuts",callback_data: "rest_shipleys" }],
-    [{ text: "Main Bird Hot Chicken",callback_data: "rest_mainbird" }],
-    [{ text: "Urban Bird Hot Chicken",callback_data: "rest_urbanbird" }],
-    [{ text: "Gyro Hut",             callback_data: "rest_gyrohut" }],
+    [{ text: "Dominos",               callback_data: "rest_dominos"      }, { text: "Papa Johns",       callback_data: "rest_papajohns"    }],
+    [{ text: "Subway",                callback_data: "rest_subway"       }, { text: "Five Guys",        callback_data: "rest_fiveguys"     }],
+    [{ text: "Jersey Mikes",          callback_data: "rest_jerseymikes"  }, { text: "Jack in the Box",  callback_data: "rest_jackinthebox" }],
+    [{ text: "Churchs Chicken",       callback_data: "rest_churchs"      }, { text: "Panda Express",    callback_data: "rest_panda"        }],
+    [{ text: "85C Bakery",            callback_data: "rest_85c"          }, { text: "Panera",           callback_data: "rest_panera"       }],
+    [{ text: "Applebees",             callback_data: "rest_applebees"    }, { text: "Olive Garden",     callback_data: "rest_olivegarden"  }],
+    [{ text: "CAVA",                  callback_data: "rest_cava"         }, { text: "Insomnia Cookies", callback_data: "rest_insomnia"     }],
+    [{ text: "Auntie Annes",          callback_data: "rest_auntie"       }, { text: "Shipleys Do-Nuts", callback_data: "rest_shipleys"     }],
+    [{ text: "Main Bird Hot Chicken", callback_data: "rest_mainbird"     }],
+    [{ text: "Urban Bird Hot Chicken",callback_data: "rest_urbanbird"    }],
+    [{ text: "Gyro Hut",              callback_data: "rest_gyrohut"      }],
   ]);
 }
 
@@ -355,13 +353,10 @@ async function handleStart(chatId, session, user, text) {
 
   resetSession(chatId);
   const freshSession = getSession(chatId);
-  freshSession.username = session.username; // carry over username
+  freshSession.username = session.username;
 
   await notifyOwner(chatId, session.username, "SESSION STARTED", "/start");
-
-  const discount = user.hasOrdered ? REPEAT_ORDER_DISCOUNT : FIRST_ORDER_DISCOUNT;
   await send(chatId, "◆ Welcome to BiteNow.");
-  await send(chatId, `We place your order. You pay ${discount} less.\n\nEvery. Single. Time.`);
   await sendRestaurantMenu(chatId);
 }
 
@@ -427,7 +422,7 @@ async function handleAddress(chatId, session, text) {
       await send(chatId, "ZIP Code:");
       break;
 
-    case ADDRESS_STEP.ZIP:
+    case ADDRESS_STEP.ZIP: {
       if (!/^\d{5,6}$/.test(text)) {
         await send(chatId, "Enter a valid ZIP code:");
         return;
@@ -438,6 +433,7 @@ async function handleAddress(chatId, session, text) {
       session.stage = STAGE.WAITING_PHONE;
       await send(chatId, "◆ Got it.\n\nPhone Number:");
       break;
+    }
   }
 }
 
@@ -521,33 +517,25 @@ async function handlePaymentCallback(chatId, session, user, username, data) {
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 
 app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // always ack immediately
+  res.sendStatus(200);
 
   const body = req.body;
   const updateId = body?.update_id;
 
-  // Deduplicate re-delivered webhooks
   if (updateId !== undefined) {
     if (processedUpdates.has(updateId)) return;
     processedUpdates.add(updateId);
     if (processedUpdates.size > 5000) {
-      // Prune old IDs to avoid unbounded growth
       const oldest = [...processedUpdates].slice(0, 1000);
       oldest.forEach((id) => processedUpdates.delete(id));
     }
   }
 
-  const msg = body?.message;
-  const callbackQuery = body?.callback_query;
-
   try {
-    if (callbackQuery) {
-      await handleCallbackQuery(callbackQuery);
-      return;
-    }
-    if (msg) {
-      await handleMessage(msg);
-    }
+    const callbackQuery = body?.callback_query;
+    const msg = body?.message;
+    if (callbackQuery) await handleCallbackQuery(callbackQuery);
+    else if (msg) await handleMessage(msg);
   } catch (err) {
     console.error("Webhook error:", err?.message, err?.stack);
   }
@@ -564,11 +552,8 @@ async function handleCallbackQuery(callbackQuery) {
 
   await answerCallback(callbackQuery.id);
 
-  if (data.startsWith("rest_")) {
-    await handleRestaurantCallback(chatId, session, username, data);
-  } else if (data.startsWith("pay_")) {
-    await handlePaymentCallback(chatId, session, user, username, data);
-  }
+  if (data.startsWith("rest_"))     await handleRestaurantCallback(chatId, session, username, data);
+  else if (data.startsWith("pay_")) await handlePaymentCallback(chatId, session, user, username, data);
 }
 
 async function handleMessage(msg) {
@@ -582,45 +567,60 @@ async function handleMessage(msg) {
     ? `@${msg.from.username}`
     : msg.from?.first_name || chatId;
 
-  // Owner-only: /reply command
+  // ── Owner-only commands ────────────────────────────────────────────────────
   if (chatId === OWNER_CHAT_ID) {
+
+    // /reply <chatId> <message>
     if (text.startsWith("/reply ")) {
       const parts     = text.split(" ");
       const targetId  = parts[1];
       const replyText = parts.slice(2).join(" ");
       if (targetId && replyText && users[targetId]) {
         await send(targetId, replyText);
-        await telegramPost("sendMessage", {
-          chat_id: OWNER_CHAT_ID,
-          text: `◆ Sent to ${targetId}.`,
-        });
-      } else if (targetId && !users[targetId]) {
-        await telegramPost("sendMessage", {
-          chat_id: OWNER_CHAT_ID,
-          text: `◆ Unknown user: ${targetId}`,
-        });
+        await telegramPost("sendMessage", { chat_id: OWNER_CHAT_ID, text: `◆ Sent to ${targetId}.` });
+      } else {
+        await telegramPost("sendMessage", { chat_id: OWNER_CHAT_ID, text: `◆ Unknown user: ${targetId}` });
       }
     }
-    return; // never process owner's own messages as customer input
+
+    // /announce <message>  — blasts to every known user
+    if (text.startsWith("/announce ")) {
+      const announcement = text.slice("/announce ".length).trim();
+      if (!announcement) return;
+
+      const allUserIds = Object.keys(users);
+      if (allUserIds.length === 0) {
+        await telegramPost("sendMessage", { chat_id: OWNER_CHAT_ID, text: "◆ No users to announce to yet." });
+        return;
+      }
+
+      let sent = 0, failed = 0;
+      for (const uid of allUserIds) {
+        const result = await telegramPost("sendMessage", {
+          chat_id: uid,
+          text: announcement,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+        result ? sent++ : failed++;
+        await delay(50); // ~20 msg/s — safely under Telegram's 30 msg/s limit
+      }
+
+      await telegramPost("sendMessage", {
+        chat_id: OWNER_CHAT_ID,
+        text: `◆ Announcement sent.\n✓ ${sent} delivered  ✗ ${failed} failed`,
+      });
+    }
+
+    return; // never process owner messages as customer input
   }
 
-  // Commands
-  if (text.startsWith("/start")) {
-    await handleStart(chatId, session, user, text);
-    return;
-  }
-  if (text === "/menu") {
-    await handleMenu(chatId, session);
-    return;
-  }
-  if (["/referral", "/refer", "/getlink"].includes(text)) {
-    await handleReferral(chatId, session, user);
-    return;
-  }
-  if (text === "/credits") {
-    await handleCredits(chatId, session, user);
-    return;
-  }
+  // ── Customer commands ──────────────────────────────────────────────────────
+
+  if (text.startsWith("/start"))                           { await handleStart(chatId, session, user, text); return; }
+  if (text === "/menu")                                    { await handleMenu(chatId, session); return; }
+  if (["/referral", "/refer", "/getlink"].includes(text))  { await handleReferral(chatId, session, user); return; }
+  if (text === "/credits")                                 { await handleCredits(chatId, session, user); return; }
 
   // Forward all non-command text to owner
   if (text) await notifyOwner(chatId, session.username, "MSG", text);
@@ -632,18 +632,13 @@ async function handleMessage(msg) {
       await handleCartPhoto(chatId, session, fileId);
     } else {
       await notifyOwnerPhoto(chatId, session.username, fileId, "PHOTO");
-      if (session.stage !== STAGE.WAITING_CART) {
-        await send(chatId, "Type /start to begin your order.");
-      }
+      await send(chatId, "Type /start to begin your order.");
     }
     return;
   }
 
   // Flow stages
-  if (session.stage === STAGE.WAITING_ADDRESS && text) {
-    await handleAddress(chatId, session, text);
-    return;
-  }
+  if (session.stage === STAGE.WAITING_ADDRESS && text) { await handleAddress(chatId, session, text); return; }
   if (session.stage === STAGE.WAITING_PHONE && text) {
     session.phone = text;
     session.stage = STAGE.WAITING_EMAIL;
