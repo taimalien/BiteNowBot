@@ -1,36 +1,37 @@
 const express = require("express");
-const axios = require("axios");
+const axios   = require("axios");
+const crypto  = require("crypto");
 
 const app = express();
 app.use(express.json());
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const BOT_TOKEN     = process.env.BOT_TOKEN;
 const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || "6408550462";
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const TELEGRAM_API  = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-const CREDITS_PER_REFERRAL = 3;
+const CREDITS_PER_REFERRAL  = 3;
 const CREDITS_FOR_FREE_ORDER = 6;
-const FIRST_ORDER_DISCOUNT = "70%";
-const REPEAT_ORDER_DISCOUNT = "65%";
+const FIRST_ORDER_DISCOUNT   = "70%";
+const REPEAT_ORDER_DISCOUNT  = "65%";
 
 const STAGE = Object.freeze({
-  IDLE: "idle",
-  WAITING_CART: "waiting_cart",
+  IDLE:            "idle",
+  WAITING_CART:    "waiting_cart",
   WAITING_ADDRESS: "waiting_address",
-  WAITING_PHONE: "waiting_phone",
-  WAITING_EMAIL: "waiting_email",
+  WAITING_PHONE:   "waiting_phone",
+  WAITING_EMAIL:   "waiting_email",
   WAITING_PAYMENT: "waiting_payment",
-  DONE: "done",
+  DONE:            "done",
 });
 
 const ADDRESS_STEP = Object.freeze({
   STREET: "street",
-  APT: "apt",
-  CITY: "city",
-  STATE: "state",
-  ZIP: "zip",
+  APT:    "apt",
+  CITY:   "city",
+  STATE:  "state",
+  ZIP:    "zip",
 });
 
 const SKIP_WORDS = new Set(["-", "--", "none", "skip", "na", "n/a", "no"]);
@@ -38,32 +39,33 @@ const SKIP_WORDS = new Set(["-", "--", "none", "skip", "na", "n/a", "no"]);
 // ─── In-memory stores (swap with Redis/DB for persistence) ────────────────────
 
 let orderCounter = 1487;
-const sessions = {};
-const users = {};
+const sessions        = {};
+const users           = {};
+const creditKeys      = {}; // key => { credits, usedBy: null }
 const processedUpdates = new Set();
 
 // ─── Maps ─────────────────────────────────────────────────────────────────────
 
 const RESTAURANT_MAP = {
-  rest_dominos:     "Dominos",
-  rest_papajohns:   "Papa Johns",
-  rest_subway:      "Subway",
-  rest_fiveguys:    "Five Guys",
-  rest_jerseymikes: "Jersey Mikes",
-  rest_jackinthebox:"Jack in the Box",
-  rest_churchs:     "Churchs Chicken",
-  rest_panda:       "Panda Express",
-  rest_85c:         "85C Bakery Cafe",
-  rest_panera:      "Panera",
-  rest_applebees:   "Applebees",
-  rest_olivegarden: "Olive Garden",
-  rest_cava:        "CAVA",
-  rest_insomnia:    "Insomnia Cookies",
-  rest_auntie:      "Auntie Annes",
-  rest_shipleys:    "Shipleys Do-Nuts",
-  rest_mainbird:    "Main Bird Hot Chicken",
-  rest_urbanbird:   "Urban Bird Hot Chicken",
-  rest_gyrohut:     "Gyro Hut",
+  rest_dominos:      "Dominos",
+  rest_papajohns:    "Papa Johns",
+  rest_subway:       "Subway",
+  rest_fiveguys:     "Five Guys",
+  rest_jerseymikes:  "Jersey Mikes",
+  rest_jackinthebox: "Jack in the Box",
+  rest_churchs:      "Churchs Chicken",
+  rest_panda:        "Panda Express",
+  rest_85c:          "85C Bakery Cafe",
+  rest_panera:       "Panera",
+  rest_applebees:    "Applebees",
+  rest_olivegarden:  "Olive Garden",
+  rest_cava:         "CAVA",
+  rest_insomnia:     "Insomnia Cookies",
+  rest_auntie:       "Auntie Annes",
+  rest_shipleys:     "Shipleys Do-Nuts",
+  rest_mainbird:     "Main Bird Hot Chicken",
+  rest_urbanbird:    "Urban Bird Hot Chicken",
+  rest_gyrohut:      "Gyro Hut",
 };
 
 const PAYMENT_MAP = {
@@ -79,13 +81,19 @@ function generateOrderId() {
   return `ORD-${++orderCounter}`;
 }
 
+// Generates a key like BITE-A3F2-9K1X
+function generateCreditKey() {
+  const part = () => crypto.randomBytes(2).toString("hex").toUpperCase();
+  return `BITE-${part()}-${part()}`;
+}
+
 function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
-      credits: 0,
+      credits:    0,
       referredBy: null,
       hasOrdered: false,
-      refCode: `REF${chatId}`,
+      refCode:    `REF${chatId}`,
     };
   }
   return users[chatId];
@@ -103,28 +111,28 @@ function getSession(chatId) {
 
 function buildFreshSession() {
   return {
-    stage: STAGE.IDLE,
-    cartFileId: null,
-    address: null,
-    addressLine2: null,
-    city: null,
-    state: null,
-    zip: null,
-    fullAddress: null,
-    phone: null,
-    email: null,
-    username: null,
-    addressStep: ADDRESS_STEP.STREET,
-    paymentMethod: null,
-    orderId: null,
+    stage:              STAGE.IDLE,
+    cartFileId:         null,
+    address:            null,
+    addressLine2:       null,
+    city:               null,
+    state:              null,
+    zip:                null,
+    fullAddress:        null,
+    phone:              null,
+    email:              null,
+    username:           null,
+    addressStep:        ADDRESS_STEP.STREET,
+    paymentMethod:      null,
+    orderId:            null,
     selectedRestaurant: null,
   };
 }
 
 function resetSession(chatId) {
-  const username = sessions[chatId]?.username ?? null;
-  sessions[chatId] = buildFreshSession();
-  sessions[chatId].stage = STAGE.WAITING_CART;
+  const username      = sessions[chatId]?.username ?? null;
+  sessions[chatId]    = buildFreshSession();
+  sessions[chatId].stage    = STAGE.WAITING_CART;
   sessions[chatId].username = username;
   return sessions[chatId];
 }
@@ -139,8 +147,7 @@ async function telegramPost(method, payload, retries = 2) {
       const res = await axios.post(`${TELEGRAM_API}/${method}`, payload);
       return res.data;
     } catch (err) {
-      const isLast = attempt === retries;
-      if (isLast) {
+      if (attempt === retries) {
         console.error(`Telegram ${method} failed:`, err?.response?.data ?? err.message);
         return null;
       }
@@ -186,24 +193,24 @@ async function answerCallback(id) {
 
 function sendPaymentButtons(chatId) {
   return sendWithButtons(chatId, "◆ Select your payment method:", [
-    [{ text: "CashApp",    callback_data: "pay_cashapp"  }, { text: "Apple Pay", callback_data: "pay_applepay" }],
-    [{ text: "Zelle",      callback_data: "pay_zelle"    }, { text: "Crypto",    callback_data: "pay_crypto"   }],
+    [{ text: "CashApp",   callback_data: "pay_cashapp"  }, { text: "Apple Pay", callback_data: "pay_applepay" }],
+    [{ text: "Zelle",     callback_data: "pay_zelle"    }, { text: "Crypto",    callback_data: "pay_crypto"   }],
   ]);
 }
 
 function sendRestaurantMenu(chatId) {
   return sendWithButtons(chatId, "◆ Select a restaurant or just send your cart screenshot:", [
-    [{ text: "Dominos",               callback_data: "rest_dominos"      }, { text: "Papa Johns",       callback_data: "rest_papajohns"    }],
-    [{ text: "Subway",                callback_data: "rest_subway"       }, { text: "Five Guys",        callback_data: "rest_fiveguys"     }],
-    [{ text: "Jersey Mikes",          callback_data: "rest_jerseymikes"  }, { text: "Jack in the Box",  callback_data: "rest_jackinthebox" }],
-    [{ text: "Churchs Chicken",       callback_data: "rest_churchs"      }, { text: "Panda Express",    callback_data: "rest_panda"        }],
-    [{ text: "85C Bakery",            callback_data: "rest_85c"          }, { text: "Panera",           callback_data: "rest_panera"       }],
-    [{ text: "Applebees",             callback_data: "rest_applebees"    }, { text: "Olive Garden",     callback_data: "rest_olivegarden"  }],
-    [{ text: "CAVA",                  callback_data: "rest_cava"         }, { text: "Insomnia Cookies", callback_data: "rest_insomnia"     }],
-    [{ text: "Auntie Annes",          callback_data: "rest_auntie"       }, { text: "Shipleys Do-Nuts", callback_data: "rest_shipleys"     }],
-    [{ text: "Main Bird Hot Chicken", callback_data: "rest_mainbird"     }],
-    [{ text: "Urban Bird Hot Chicken",callback_data: "rest_urbanbird"    }],
-    [{ text: "Gyro Hut",              callback_data: "rest_gyrohut"      }],
+    [{ text: "Dominos",                callback_data: "rest_dominos"      }, { text: "Papa Johns",       callback_data: "rest_papajohns"    }],
+    [{ text: "Subway",                 callback_data: "rest_subway"       }, { text: "Five Guys",        callback_data: "rest_fiveguys"     }],
+    [{ text: "Jersey Mikes",           callback_data: "rest_jerseymikes"  }, { text: "Jack in the Box",  callback_data: "rest_jackinthebox" }],
+    [{ text: "Churchs Chicken",        callback_data: "rest_churchs"      }, { text: "Panda Express",    callback_data: "rest_panda"        }],
+    [{ text: "85C Bakery",             callback_data: "rest_85c"          }, { text: "Panera",           callback_data: "rest_panera"       }],
+    [{ text: "Applebees",              callback_data: "rest_applebees"    }, { text: "Olive Garden",     callback_data: "rest_olivegarden"  }],
+    [{ text: "CAVA",                   callback_data: "rest_cava"         }, { text: "Insomnia Cookies", callback_data: "rest_insomnia"     }],
+    [{ text: "Auntie Annes",           callback_data: "rest_auntie"       }, { text: "Shipleys Do-Nuts", callback_data: "rest_shipleys"     }],
+    [{ text: "Main Bird Hot Chicken",  callback_data: "rest_mainbird"     }],
+    [{ text: "Urban Bird Hot Chicken", callback_data: "rest_urbanbird"    }],
+    [{ text: "Gyro Hut",               callback_data: "rest_gyrohut"      }],
   ]);
 }
 
@@ -326,6 +333,8 @@ const FAQ = [
     reply: "◆ BiteNow doesn't miss.\n\nEvery order placed. Every customer saves." },
   { keys: ["refer", "referral", "invite", "link", "credits", "credit", "free"],
     reply: "◆ Type /referral to get your link.\n\nEvery person you bring in who orders → 3 credits.\n6 credits → free order." },
+  { keys: ["redeem", "key", "code"],
+    reply: "◆ Got a credit key? Use /redeem YOUR-KEY to apply it." },
   { keys: ["hi", "hey", "hello", "sup", "yo", "hii", "heyy", "helo", "wsg", "wsp"],
     reply: "◆ Welcome to BiteNow.\n\nFirst order is 70% off. Send your cart screenshot and we handle the rest." },
 ];
@@ -341,19 +350,25 @@ function getScriptedReply(text) {
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 async function handleStart(chatId, session, user, text) {
-  const parts = text.split(" ");
+  const parts   = text.split(" ");
   const refCode = parts[1] || null;
 
+  // Link referral — only on first ever /start, only if not already referred
   if (refCode && !user.referredBy) {
     const referrer = findUserByRefCode(refCode);
     if (referrer && referrer.chatId !== chatId) {
       user.referredBy = referrer.chatId;
+      // Notify referrer someone used their link
+      await telegramPost("sendMessage", {
+        chat_id: referrer.chatId,
+        text: `◆ Someone just joined using your referral link.\n\nYou'll get 3 credits when they place their first order.`,
+        parse_mode: "HTML",
+      });
     }
   }
 
   resetSession(chatId);
-  const freshSession = getSession(chatId);
-  freshSession.username = session.username;
+  getSession(chatId).username = session.username;
 
   await notifyOwner(chatId, session.username, "SESSION STARTED", "/start");
   await send(chatId, "◆ Welcome to BiteNow.");
@@ -371,9 +386,10 @@ async function handleReferral(chatId, session, user) {
   await notifyOwner(chatId, session.username, "COMMAND", "/referral");
   await send(chatId,
     `◆ Your referral link:\nt.me/BiteNowBot?start=${user.refCode}\n\n` +
-    `◇ Every person you bring in who orders → 3 credits\n` +
-    `◇ 6 credits → your next order is completely free\n\n` +
-    `Credits: ${user.credits}\nNeeded: ${needed}`
+    `◇ Share this link — when someone joins and places their first order you get 3 credits\n` +
+    `◇ 6 credits = your next order is completely free\n\n` +
+    `Your credits: ${user.credits}\n` +
+    `Credits needed for free order: ${needed}`
   );
 }
 
@@ -387,9 +403,49 @@ async function handleCredits(chatId, session, user) {
   }
 }
 
+// /redeem <key> — customer command
+async function handleRedeem(chatId, session, user, text) {
+  const key = text.split(" ")[1]?.toUpperCase().trim();
+  await notifyOwner(chatId, session.username, "REDEEM ATTEMPT", key || "(no key)");
+
+  if (!key) {
+    await send(chatId, "◆ Usage: /redeem YOUR-KEY\n\nExample: /redeem BITE-A3F2-9K1X");
+    return;
+  }
+
+  const keyData = creditKeys[key];
+
+  if (!keyData) {
+    await send(chatId, "◆ That key doesn't exist. Double-check it and try again.");
+    return;
+  }
+  if (keyData.usedBy) {
+    await send(chatId, "◆ That key has already been redeemed.");
+    return;
+  }
+
+  // Apply credits
+  keyData.usedBy  = chatId;
+  user.credits   += keyData.credits;
+
+  await notifyOwner(chatId, session.username, "KEY REDEEMED", `${key} → +${keyData.credits} credits`);
+
+  const needed = Math.max(0, CREDITS_FOR_FREE_ORDER - user.credits);
+  const freeMsg = user.credits >= CREDITS_FOR_FREE_ORDER
+    ? `\n\nYour next order is free. Place it whenever.`
+    : `\n\n${needed} more credits until your free order.`;
+
+  await send(chatId,
+    `◆ Key redeemed.\n\n` +
+    `◇ +${keyData.credits} credits added\n` +
+    `◇ Total credits: ${user.credits}` +
+    freeMsg
+  );
+}
+
 async function handleCartPhoto(chatId, session, fileId) {
-  session.cartFileId = fileId;
-  session.stage = STAGE.WAITING_ADDRESS;
+  session.cartFileId  = fileId;
+  session.stage       = STAGE.WAITING_ADDRESS;
   session.addressStep = ADDRESS_STEP.STREET;
   await notifyOwnerPhoto(chatId, session.username, fileId, "CART SCREENSHOT");
   await send(chatId, "◆ Received.\n\nLet's get your details locked in.");
@@ -399,25 +455,25 @@ async function handleCartPhoto(chatId, session, fileId) {
 async function handleAddress(chatId, session, text) {
   switch (session.addressStep) {
     case ADDRESS_STEP.STREET:
-      session.address = text;
+      session.address     = text;
       session.addressStep = ADDRESS_STEP.APT;
       await send(chatId, "Apt or Unit # (type - to skip):");
       break;
 
     case ADDRESS_STEP.APT:
       session.addressLine2 = SKIP_WORDS.has(text.toLowerCase()) ? null : text;
-      session.addressStep = ADDRESS_STEP.CITY;
+      session.addressStep  = ADDRESS_STEP.CITY;
       await send(chatId, "City:");
       break;
 
     case ADDRESS_STEP.CITY:
-      session.city = text;
+      session.city        = text;
       session.addressStep = ADDRESS_STEP.STATE;
       await send(chatId, "State:");
       break;
 
     case ADDRESS_STEP.STATE:
-      session.state = text;
+      session.state       = text;
       session.addressStep = ADDRESS_STEP.ZIP;
       await send(chatId, "ZIP Code:");
       break;
@@ -428,9 +484,9 @@ async function handleAddress(chatId, session, text) {
         return;
       }
       session.zip = text;
-      const apt = session.addressLine2 ? `, ${session.addressLine2}` : "";
+      const apt   = session.addressLine2 ? `, ${session.addressLine2}` : "";
       session.fullAddress = `${session.address}${apt}, ${session.city}, ${session.state} ${session.zip}`;
-      session.stage = STAGE.WAITING_PHONE;
+      session.stage       = STAGE.WAITING_PHONE;
       await send(chatId, "◆ Got it.\n\nPhone Number:");
       break;
     }
@@ -462,21 +518,21 @@ async function handlePaymentCallback(chatId, session, user, username, data) {
 
   const isFreeOrder  = user.credits >= CREDITS_FOR_FREE_ORDER;
   const isFirstOrder = !user.hasOrdered;
-  session.orderId = generateOrderId();
+  session.orderId    = generateOrderId();
 
   await notifyOwner(chatId, username, "PAYMENT METHOD", chosen);
 
-  // Credit referrer on first order
+  // ── Referral: credit the referrer on the referred user's first order ────────
   if (isFirstOrder && user.referredBy) {
-    const referrer = getUser(user.referredBy);
+    const referrer    = getUser(user.referredBy);
     referrer.credits += CREDITS_PER_REFERRAL;
-    const refNeeded = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
-    const refMsg = referrer.credits >= CREDITS_FOR_FREE_ORDER
+    const refNeeded   = Math.max(0, CREDITS_FOR_FREE_ORDER - referrer.credits);
+    const refMsg      = referrer.credits >= CREDITS_FOR_FREE_ORDER
       ? "Your next order is free. Use it whenever."
       : `${refNeeded} more credits until your free order.`;
     await telegramPost("sendMessage", {
       chat_id: user.referredBy,
-      text: `◆ Someone you brought in just placed their first order.\n\n◇ +3 credits. Total: ${referrer.credits}\n\n${refMsg}`,
+      text: `◆ Someone you referred just placed their first order.\n\n◇ +${CREDITS_PER_REFERRAL} credits added. Total: ${referrer.credits}\n\n${refMsg}`,
       parse_mode: "HTML",
     });
   }
@@ -505,7 +561,7 @@ async function handlePaymentCallback(chatId, session, user, username, data) {
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `We will reach out shortly with payment details.\n\n` +
     `◆ Refer friends and earn free orders:\n` +
-    `Every person you invite who places an order earns you 3 credits.\n` +
+    `Every person you invite who orders earns you 3 credits.\n` +
     `6 credits = your next order is completely free.\n\n` +
     `Your link:\nt.me/BiteNowBot?start=${user.refCode}`
   );
@@ -519,7 +575,7 @@ async function handlePaymentCallback(chatId, session, user, username, data) {
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
 
-  const body = req.body;
+  const body     = req.body;
   const updateId = body?.update_id;
 
   if (updateId !== undefined) {
@@ -533,9 +589,9 @@ app.post("/webhook", async (req, res) => {
 
   try {
     const callbackQuery = body?.callback_query;
-    const msg = body?.message;
+    const msg           = body?.message;
     if (callbackQuery) await handleCallbackQuery(callbackQuery);
-    else if (msg) await handleMessage(msg);
+    else if (msg)      await handleMessage(msg);
   } catch (err) {
     console.error("Webhook error:", err?.message, err?.stack);
   }
@@ -583,17 +639,15 @@ async function handleMessage(msg) {
       }
     }
 
-    // /announce <message>  — blasts to every known user
+    // /announce <message>
     if (text.startsWith("/announce ")) {
       const announcement = text.slice("/announce ".length).trim();
       if (!announcement) return;
-
       const allUserIds = Object.keys(users);
       if (allUserIds.length === 0) {
         await telegramPost("sendMessage", { chat_id: OWNER_CHAT_ID, text: "◆ No users to announce to yet." });
         return;
       }
-
       let sent = 0, failed = 0;
       for (const uid of allUserIds) {
         const result = await telegramPost("sendMessage", {
@@ -603,12 +657,57 @@ async function handleMessage(msg) {
           disable_web_page_preview: true,
         });
         result ? sent++ : failed++;
-        await delay(50); // ~20 msg/s — safely under Telegram's 30 msg/s limit
+        await delay(50);
       }
-
       await telegramPost("sendMessage", {
         chat_id: OWNER_CHAT_ID,
         text: `◆ Announcement sent.\n✓ ${sent} delivered  ✗ ${failed} failed`,
+      });
+    }
+
+    // /genkey <credits>  — generate a one-time credit key
+    // Example: /genkey 6   → gives someone a free order
+    //          /genkey 3   → gives 3 credits
+    if (text.startsWith("/genkey ")) {
+      const amount = parseInt(text.split(" ")[1], 10);
+      if (!amount || amount < 1) {
+        await telegramPost("sendMessage", {
+          chat_id: OWNER_CHAT_ID,
+          text: "◆ Usage: /genkey <credits>\n\nExample: /genkey 6",
+        });
+        return;
+      }
+      const key          = generateCreditKey();
+      creditKeys[key]    = { credits: amount, usedBy: null };
+      const freeOrderNote = amount >= CREDITS_FOR_FREE_ORDER ? "\n(enough for a free order)" : "";
+      await telegramPost("sendMessage", {
+        chat_id: OWNER_CHAT_ID,
+        text:
+          `◆ Credit key generated\n\n` +
+          `<code>${key}</code>\n\n` +
+          `◇ Worth: ${amount} credits${freeOrderNote}\n` +
+          `◇ One-time use\n\n` +
+          `Send this key to the customer.\n` +
+          `They redeem it with: /redeem ${key}`,
+        parse_mode: "HTML",
+      });
+    }
+
+    // /keys  — list all generated keys and their status
+    if (text === "/keys") {
+      const all = Object.entries(creditKeys);
+      if (all.length === 0) {
+        await telegramPost("sendMessage", { chat_id: OWNER_CHAT_ID, text: "◆ No keys generated yet." });
+        return;
+      }
+      const lines = all.map(([k, v]) => {
+        const status = v.usedBy ? `✗ used by ${v.usedBy}` : "✓ available";
+        return `<code>${k}</code> — ${v.credits} credits — ${status}`;
+      });
+      await telegramPost("sendMessage", {
+        chat_id: OWNER_CHAT_ID,
+        text: `◆ All keys (${all.length}):\n\n` + lines.join("\n"),
+        parse_mode: "HTML",
       });
     }
 
@@ -617,10 +716,11 @@ async function handleMessage(msg) {
 
   // ── Customer commands ──────────────────────────────────────────────────────
 
-  if (text.startsWith("/start"))                           { await handleStart(chatId, session, user, text); return; }
-  if (text === "/menu")                                    { await handleMenu(chatId, session); return; }
-  if (["/referral", "/refer", "/getlink"].includes(text))  { await handleReferral(chatId, session, user); return; }
-  if (text === "/credits")                                 { await handleCredits(chatId, session, user); return; }
+  if (text.startsWith("/start"))                          { await handleStart(chatId, session, user, text); return; }
+  if (text === "/menu")                                   { await handleMenu(chatId, session); return; }
+  if (["/referral", "/refer", "/getlink"].includes(text)) { await handleReferral(chatId, session, user); return; }
+  if (text === "/credits")                                { await handleCredits(chatId, session, user); return; }
+  if (text.startsWith("/redeem"))                         { await handleRedeem(chatId, session, user, text); return; }
 
   // Forward all non-command text to owner
   if (text) await notifyOwner(chatId, session.username, "MSG", text);
@@ -670,9 +770,10 @@ app.get("/setup", async (req, res) => {
     await telegramPost("setMyCommands", {
       commands: [
         { command: "start",    description: "Place an order — 70% off first order" },
-        { command: "menu",     description: "See all restaurants we cover" },
-        { command: "referral", description: "Get your referral link" },
-        { command: "credits",  description: "Check your credit balance" },
+        { command: "menu",     description: "See all restaurants we cover"          },
+        { command: "referral", description: "Get your referral link"                },
+        { command: "credits",  description: "Check your credit balance"             },
+        { command: "redeem",   description: "Redeem a credit key"                   },
       ],
     });
     await telegramPost("setChatMenuButton", { menu_button: { type: "commands" } });
